@@ -348,6 +348,35 @@ uq16 SQRT_UQ16(uq16 n) {
     return (uq16)c;
 }
 
+uq16 RSQRT_UQ16_UNSAFE(uq16 n) {
+    uq16 res;
+    uint64_t quasi_one_q48;
+    uint32_t quasi_one_half;
+
+    if (n <= 0x71c0) { // minimum value that works
+        res = SQRT_UQ16((uq16)(0xffffffff / n));
+    } else {
+        uint32_t lz = __builtin_clzg((uint32_t)n);
+        res = (uq16)(0x100 << (lz >> 1));
+        res = (uq16)(res | (0x40 << ((lz + 1) >> 1))); // dirty but accurate guess
+
+        for (int i = 0; i < 4; i++) { // Newton-Raphson iterations
+            quasi_one_q48 = (uint64_t)res * (uint64_t)res * (uint64_t)n;
+            quasi_one_half = quasi_one_q48 >> 33;
+            res = MUL_UQ16_UNSAFE(res, (uq16)(0x18000 - quasi_one_half));
+        }
+    }
+
+    // correct off-by-one errors
+    quasi_one_q48 = (uint64_t)res * (uint64_t)res * (uint64_t)n;
+    int64_t quasi_diff_q48 = (int64_t)quasi_one_q48 - 0x1000000000000;
+
+    int64_t res_alt = (int64_t)res - ((quasi_diff_q48 >> 63) | 1);
+    int64_t quasi_one_q48_alt = res_alt * res_alt * (int64_t)n;
+
+    return (std::abs(quasi_diff_q48) < std::abs(quasi_one_q48_alt - 0x1000000000000)) ? res : (uq16)res_alt;
+}
+
 static uq16 __SQRT_SMALL_UQ16(uq16 n) {
     if (n == 0)
         return (uq16)0;
