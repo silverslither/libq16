@@ -18,11 +18,6 @@ uq16 F64_TO_UQ16(double n) {
     return (uq16)res;
 }
 
-q16 F64_TO_Q16_UNSAFE(double n) {
-    uint32_t res = (uint32_t)fabs(std::round(65536.0 * n));
-    return (n >= 0) ? (q16)res : NABS_Q16((q16)res);
-}
-
 q16 F64_TO_Q16(double n) {
     double res = fabs(std::round(65536.0 * n));
 
@@ -349,7 +344,7 @@ uq16 SQRT_UQ16(uq16 n) {
 }
 
 uq16 RSQRT_UQ16_UNSAFE(uq16 n) {
-    uq16 res;
+    uint32_t res;
     uint64_t quasi_one_q48;
     uint32_t quasi_one_half;
 
@@ -357,14 +352,18 @@ uq16 RSQRT_UQ16_UNSAFE(uq16 n) {
         res = SQRT_UQ16((uq16)(0xffffffff / n));
     } else {
         uint32_t lz = __builtin_clzg((uint32_t)n);
-        res = (uq16)(0x100 << (lz >> 1));
-        res = (uq16)(res | (0x40 << ((lz + 1) >> 1))); // dirty but accurate guess
+        res = 0x100 << (lz >> 1);
+        res = res | (0x40 << ((lz + 1) >> 1)); // dirty but accurate guess
 
-        for (int i = 0; i < 4; i++) { // Newton-Raphson iterations
+        for (int i = 0; i < 3; i++) { // 32-bit Newton-Raphson iterations, should be unrolled by compiler
             quasi_one_q48 = (uint64_t)res * (uint64_t)res * (uint64_t)n;
-            quasi_one_half = quasi_one_q48 >> 33;
-            res = MUL_UQ16_UNSAFE(res, (uq16)(0x18000 - quasi_one_half));
+            quasi_one_half = quasi_one_q48 >> 34; // Q.15
+            res = (res * (0xc000 - quasi_one_half)) >> 15;
         }
+
+        quasi_one_q48 = (uint64_t)res * (uint64_t)res * (uint64_t)n; // 64-bit Newton-Raphson iteration
+        quasi_one_half = quasi_one_q48 >> 33;
+        res = ((uint64_t)res * (uint64_t)(0x18000 - quasi_one_half)) >> 16;
     }
 
     // correct off-by-one errors
@@ -374,7 +373,7 @@ uq16 RSQRT_UQ16_UNSAFE(uq16 n) {
     int64_t res_alt = (int64_t)res - ((quasi_diff_q48 >> 63) | 1);
     int64_t quasi_one_q48_alt = res_alt * res_alt * (int64_t)n;
 
-    return (std::abs(quasi_diff_q48) < std::abs(quasi_one_q48_alt - 0x1000000000000)) ? res : (uq16)res_alt;
+    return (std::abs(quasi_diff_q48) < std::abs(quasi_one_q48_alt - 0x1000000000000)) ? (uq16)res : (uq16)res_alt;
 }
 
 static uq16 __SQRT_SMALL_UQ16(uq16 n) {

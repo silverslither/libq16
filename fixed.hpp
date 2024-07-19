@@ -8,28 +8,28 @@
 #include <cstdint>
 #include <cstdio>
 
-// Placeholder log function
+// Placeholder logging function
 #define LIBQ16_LOG_ERR(str) fprintf(stderr, str)
 
 #ifndef LIBQ16_NO_OPAQUE_TYPEDEFS
 
 // WARNING: Likely not transparent! Only for LSP type checking. Production builds should define LIBQ16_NO_OPAQUE_TYPEDEFS.
-#define __INT_OPAQUE_TYPEDEF(T, D)                  \
-    struct D {                                      \
-        T t;                                        \
-        explicit D(const T &_t) noexcept : t(_t) {} \
-        D() noexcept : t(0) {}                      \
-        D(const D &_d) noexcept = default;          \
-        D &operator=(const D &rhs) noexcept {       \
-            t = rhs.t;                              \
-            return *this;                           \
-        }                                           \
-        D &operator=(const T &rhs) noexcept {       \
-            t = rhs;                                \
-            return *this;                           \
-        }                                           \
-        operator const T &() const { return t; }    \
-        operator T &() { return t; }                \
+#define __INT_OPAQUE_TYPEDEF(T, D)                            \
+    struct D {                                                \
+        T t;                                                  \
+        constexpr explicit D(const T &_t) noexcept : t(_t) {} \
+        constexpr D() noexcept : t(0) {}                      \
+        constexpr D(const D &_d) noexcept = default;          \
+        constexpr D &operator=(const D &rhs) noexcept {       \
+            t = rhs.t;                                        \
+            return *this;                                     \
+        }                                                     \
+        constexpr D &operator=(const T &rhs) noexcept {       \
+            t = rhs;                                          \
+            return *this;                                     \
+        }                                                     \
+        constexpr operator const T &() const { return t; }    \
+        constexpr operator T &() { return t; }                \
     }
 
 __INT_OPAQUE_TYPEDEF(uint32_t, ufixed_16_16);
@@ -60,28 +60,30 @@ struct SC_Q16 {
     q16 cos;
 };
 
-__LIBQ16_ALWAYS_INLINE uq16 F64_TO_UQ16_UNSAFE(double n) {
+constexpr __LIBQ16_ALWAYS_INLINE uq16 F64_TO_UQ16_UNSAFE(double n) {
     return (uq16)std::round(65536.0 * n);
 }
+constexpr __LIBQ16_ALWAYS_INLINE q16 F64_TO_Q16_UNSAFE(double n) {
+    uint32_t res = (uint32_t)fabs(65536.0 * n);
+    return (q16)(((uint32_t)((std::bit_cast<uint64_t>(n) & 0x8000000000000000) >> 32)) | res);
+}
 uq16 F64_TO_UQ16(double n);
-q16 F64_TO_Q16_UNSAFE(double n);
 q16 F64_TO_Q16(double n);
 
-__LIBQ16_ALWAYS_INLINE double UQ16_TO_F64(uq16 n) {
+constexpr __LIBQ16_ALWAYS_INLINE double UQ16_TO_F64(uq16 n) {
     return (double)n / 65536.0;
 }
-__LIBQ16_ALWAYS_INLINE double Q16_TO_F64(q16 n) {
+constexpr __LIBQ16_ALWAYS_INLINE double Q16_TO_F64(q16 n) {
     double res = (double)(n & 0x7fffffff) / 65536.0;
     return std::bit_cast<double>(((uint64_t)(n & 0x80000000) << 32) | std::bit_cast<uint64_t>(res));
 }
 
-__LIBQ16_ALWAYS_INLINE q16 UQ16_TO_Q16_UNSAFE(uq16 n) {
+constexpr __LIBQ16_ALWAYS_INLINE q16 UQ16_TO_Q16_UNSAFE(uq16 n) {
     return (q16)n;
 }
-__LIBQ16_ALWAYS_INLINE uq16 Q16_TO_UQ16_UNSAFE(q16 n) {
+constexpr __LIBQ16_ALWAYS_INLINE uq16 Q16_TO_UQ16_UNSAFE(q16 n) {
     return (uq16)n;
 }
-
 q16 UQ16_TO_Q16(uq16 n);
 uq16 Q16_TO_UQ16(q16 n);
 
@@ -157,10 +159,18 @@ __LIBQ16_ALWAYS_INLINE uq16 MOD_UQ16(uq16 a, uq16 b) {
     return (b == 0) ? a : (uq16)(a % b);
 }
 __LIBQ16_ALWAYS_INLINE q16 MOD_Q16_UNSAFE(q16 a, q16 b) {
-    return (q16)((ABS_Q16(a) % ABS_Q16(b)) | SGN_Q16(a));
+    uint32_t res = ABS_Q16(a) % ABS_Q16(b);
+    if (res == 0)
+        return (q16)0;
+    return (q16)(res | SGN_Q16(a));
 }
 __LIBQ16_ALWAYS_INLINE q16 MOD_Q16(q16 a, q16 b) {
-    return (b == 0) ? a : (q16)((ABS_Q16(a) % ABS_Q16(b)) | SGN_Q16(a));
+    if (b == 0)
+        return a;
+    uint32_t res = ABS_Q16(a) % ABS_Q16(b);
+    if (res == 0)
+        return (q16)0;
+    return (q16)(res | SGN_Q16(a));
 }
 
 uq16 SQRT_UQ16(uq16 n);
