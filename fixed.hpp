@@ -61,11 +61,11 @@ struct SC_Q16 {
 };
 
 constexpr __LIBQ16_ALWAYS_INLINE uq16 F64_TO_UQ16_UNSAFE(double n) {
-    return (uq16)std::round(65536.0 * n);
+    return (uq16)(65536.0 * n + 0.5);
 }
 constexpr __LIBQ16_ALWAYS_INLINE q16 F64_TO_Q16_UNSAFE(double n) {
-    uint32_t res = (uint32_t)fabs(std::round(65536.0 * n));
-    return (q16)(((uint32_t)((std::bit_cast<uint64_t>(n) & 0x8000000000000000) >> 32)) | res);
+    double res = std::bit_cast<double>(std::bit_cast<uint64_t>(65536.0 * n) & 0x7fffffffffffffff) + 0.5;
+    return (q16)(((uint32_t)((std::bit_cast<uint64_t>(n) & 0x8000000000000000) >> 32)) | (uint32_t)res);
 }
 uq16 F64_TO_UQ16(double n);
 q16 F64_TO_Q16(double n);
