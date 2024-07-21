@@ -376,11 +376,11 @@ uq16 RSQRT_UQ16_UNSAFE(uq16 n) {
     return (std::abs(quasi_diff_q48) < std::abs(quasi_one_q48_alt - 0x1000000000000)) ? (uq16)res : (uq16)res_alt;
 }
 
-static uq16 __SQRT_SMALL_UQ16(uq16 n) {
+static uq16 __SQRT_32(uint32_t n) {
     if (n == 0)
         return (uq16)0;
 
-    uint32_t x = n << 16;
+    uint32_t x = n;
     uint32_t c = 0;
     uint32_t d = (uint32_t)1 << ((__builtin_clzg(x) ^ 0x1f) & 0x1e);
 
@@ -423,12 +423,12 @@ SC_Q16 SINCOS_UQ16(uq16 n) {
 
     // qcos(x) = 1 - (b - ax^2)x^2
     // optimal constants simulated with a ~= 63, b = a / 64 + 32(2 - sqrt(2))
-    // a = 0x3f1188, b = 0x13bb095302, total err = 34208, max err = 2 (lowest total err)
-    // a = 0x3ef743, b = 0x13baa03f02, total err = 35880, max err = 1 (lowest total err for max err = 1)
+    // a = 0x3f1188, b = 0x13bb095302 (lowest total err)
+    // a = 0x3ef743, b = 0x13baa03f02 (lowest total err for max err = 1)
     uint64_t norm_sq_q32 = norm * norm;
-    uint64_t inner_q32 = (uint64_t)0x13baa03f02 - __MUL_16_32((uint64_t)0x3ef743, norm_sq_q32);
+    uint64_t inner_q32 = 0x13baa03f02 - __MUL_16_32(0x3ef743, norm_sq_q32);
     uq16 cos = SUB_UQ16_UNSAFE((uq16)0x10000, __MUL_32_32(inner_q32, norm_sq_q32));
-    uq16 sin = __SQRT_SMALL_UQ16(SUB_UQ16_UNSAFE((uq16)0x10000, MUL_UQ16_UNSAFE(cos, cos)));
+    uq16 sin = __SQRT_32(-(cos * cos));
 
     if (s & 0x4000) {
         uq16 temp = cos;
