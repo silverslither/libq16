@@ -302,7 +302,7 @@ uq16 SQRT_UQ16(uq16 n) {
 
     uint32_t x = n;
     uint32_t c = 0;
-    uint32_t d = (uint32_t)1 << ((__builtin_clzg(x) ^ 0x1f) & 0x1e);
+    uint32_t d = 1 << ((__builtin_clzg(x) ^ 0x1f) & 0x1e);
 
     while (d) {
         if (x >= c + d) {
@@ -344,6 +344,8 @@ uq16 SQRT_UQ16(uq16 n) {
 }
 
 uq16 RSQRT_UQ16_UNSAFE(uq16 n) {
+    // Mostly exact, except edge cases where result is right in between two integers
+
     uint32_t res;
     uint64_t quasi_one_q48;
     uint32_t quasi_one_half;
@@ -376,13 +378,13 @@ uq16 RSQRT_UQ16_UNSAFE(uq16 n) {
     return (std::abs(quasi_diff_q48) < std::abs(quasi_one_q48_alt - 0x1000000000000)) ? (uq16)res : (uq16)res_alt;
 }
 
-static uq16 __SQRT_32(uint32_t n) {
+static uq16 __SQRT_32_R16(uint32_t n) {
     if (n == 0)
         return (uq16)0;
 
     uint32_t x = n;
     uint32_t c = 0;
-    uint32_t d = (uint32_t)1 << ((__builtin_clzg(x) ^ 0x1f) & 0x1e);
+    uint32_t d = 1 << ((__builtin_clzg(x) ^ 0x1f) & 0x1e);
 
     while (d) {
         if (x >= c + d) {
@@ -401,13 +403,7 @@ static uq16 __SQRT_32(uint32_t n) {
     return (uq16)c;
 }
 
-static uint64_t __MUL_16_32(uint64_t a, uint64_t b) {
-    uint64_t res = a * b;
-    res = (res >> 16) + ((res & 0x8000) >> 15);
-    return res;
-}
-
-static uq16 __MUL_32_32(uint64_t a, uint64_t b) {
+static uint32_t __MUL_32_32_R16(uint64_t a, uint64_t b) {
     uint64_t res = a * b;
     res = (res >> 48) + ((res & 0x800000000000) >> 47);
     return (uq16)res;
@@ -426,9 +422,9 @@ SC_Q16 SINCOS_UQ16(uq16 n) {
     // a = 0x3f1188, b = 0x13bb095302 (lowest total err)
     // a = 0x3ef743, b = 0x13baa03f02 (lowest total err for max err = 1)
     uint64_t norm_sq_q32 = norm * norm;
-    uint64_t inner_q32 = 0x13baa03f02 - __MUL_16_32(0x3ef743, norm_sq_q32);
-    uq16 cos = SUB_UQ16_UNSAFE((uq16)0x10000, __MUL_32_32(inner_q32, norm_sq_q32));
-    uq16 sin = __SQRT_32(-(cos * cos));
+    uint64_t inner_q32 = 0x13baa03f02 - ((0x3ef743 * norm_sq_q32) >> 16);
+    uq16 cos = (uq16)(0x10000 - __MUL_32_32_R16(inner_q32, norm_sq_q32));
+    uq16 sin = __SQRT_32_R16(-(cos * cos));
 
     if (s & 0x4000) {
         uq16 temp = cos;
@@ -441,7 +437,55 @@ SC_Q16 SINCOS_UQ16(uq16 n) {
     if (s & 0x8000 && cos != 0)
         cos = NABS_Q16((q16)cos);
 
-    return SC_Q16{(q16)sin, (q16)cos};
+    return SC_Q16{ (q16)sin, (q16)cos };
+}
+
+uq16 ATAN2_Q16_UNSAFE(q16 y, q16 x) {
+    // Max error of 1 about 3% of the time
+
+    uint32_t abs_y = y & 0x7fffffff;
+    uint32_t abs_x = x & 0x7fffffff;
+
+    uint32_t res = 0;
+    uint32_t negate = 0;
+    uint64_t quotient_q32;
+
+    // abs_y > 2.5 * abs_x
+    // rotate 90 degrees
+    if (abs_y >> 1 > abs_x + (abs_x >> 2)) {
+        res = 0x4000;
+        negate = 0xffffffff;
+        quotient_q32 = ((uint64_t)abs_x << 32) / abs_y;
+        goto poly;
+    }
+
+    // abs_x <= 2.5 * abs_y
+    // rotate 45 degrees
+    if (abs_x >> 1 <= abs_y + (abs_y >> 2)) {
+        res = 0x2000;
+        int32_t tmp = (int32_t)abs_y - (int32_t)abs_x;
+        abs_x += abs_y;
+        negate = tmp >> 31;
+        abs_y = (uint32_t)(tmp ^ negate) - negate;
+    }
+
+    quotient_q32 = ((uint64_t)abs_y << 32) / abs_x;
+
+poly:
+    // qatan(x) = x(c - x^2(b - ax^2))
+    // remez minimax polynomial on [-3/7, 3/7]
+    // a = 0x693cc22, b = 0xd72318d, c = 0x28bd9daa
+    uint64_t quotient_sq_q32 = (quotient_q32 * quotient_q32) >> 32;
+    uint64_t poly_q32 = 0xd72318d - ((0x693cc22 * quotient_sq_q32) >> 32);
+    poly_q32 = 0x28bd9daa - ((poly_q32 * quotient_sq_q32) >> 32);
+
+    res += (__MUL_32_32_R16(poly_q32, quotient_q32) ^ negate) - negate;
+    if (x & 0x80000000)
+        res = 0x8000 - res;
+    if (y & 0x80000000)
+        res = 0x10000 - res;
+
+    return (uq16)res;
 }
 
 #undef __builtin_clzg
