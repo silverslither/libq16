@@ -378,71 +378,105 @@ uq16 RSQRT_UQ16_UNSAFE(uq16 n) {
     return (std::abs(quasi_diff_q48) < std::abs(quasi_one_q48_alt - 0x1000000000000)) ? (uq16)res : (uq16)res_alt;
 }
 
-static uq16 __SQRT_32_R16(uint32_t n) {
-    if (n == 0)
-        return (uq16)0;
-
-    uint32_t x = n;
-    uint32_t c = 0;
-    uint32_t d = 1 << ((__builtin_clzg(x) ^ 0x1f) & 0x1e);
-
-    while (d) {
-        if (x >= c + d) {
-            x -= c + d;
-            c = (c >> 1) + d;
-        } else {
-            c = (c >> 1);
-        }
-
-        d >>= 2;
-    }
-
-    if (x > c)
-        c++;
-
-    return (uq16)c;
-}
-
-static uint32_t __MUL_32_32_R16(uint64_t a, uint64_t b) {
-    uint64_t res = a * b;
-    res = (res >> 48) + ((res & 0x800000000000) >> 47);
-    return (uq16)res;
-}
-
 // Calculates both the sine and cosine of an angle measured in rotations.
+// Angle of vector spanned by result is guaranteed to be correct.
+// Length of vector may not be exactly one.
 SC_Q16 SINCOS_UQ16(uq16 n) {
-    // Algorithm by SilasLock, originally developed for Kaze Emanuar's SM64 optimization project.
-
     int32_t _n = (int32_t)n;
     uq16 norm = (uq16)std::abs((_n & 0x2000) - (_n & 0x1fff));
     uint16_t s = n ^ (n << 1);
 
-    // qcos(x) = 1 - (b - ax^2)x^2
-    // optimal constants simulated with a ~= 63, b = a / 64 + 32(2 - sqrt(2))
-    // a = 0x3f1188, b = 0x13bb095302 (lowest total err)
-    // a = 0x3ef743, b = 0x13baa03f02 (lowest total err for max err = 1)
+    // qcos(x) = d - x^2(c - x^2(b - ax^2))
+    // remez minimax polynomial on [-1/8, 1/8]
+    // a:q16 = 0x5397b5, b = 0x40ebd73ac5, c = 0x13bd391496, d = 0xffffff8a
+    // max err = 1, occurs 10/8192 angles
     uint64_t norm_sq_q32 = norm * norm;
-    uint64_t inner_q32 = 0x13baa03f02 - ((0x3ef743 * norm_sq_q32) >> 16);
-    uq16 cos = (uq16)(0x10000 - __MUL_32_32_R16(inner_q32, norm_sq_q32));
-    uq16 sin = __SQRT_32_R16(-(cos * cos));
+    uint64_t poly_q32 = 0x40ebd73ac5 - ((0x5397b5 * norm_sq_q32) >> 16);
+    poly_q32 = 0x13bd391496 - ((poly_q32 * norm_sq_q32) >> 32);
+    poly_q32 = 0xffffff8a - ((poly_q32 * norm_sq_q32) >> 32);
+    q16 cos = (q16)((poly_q32 >> 16) + ((poly_q32 & 0x8000) >> 15));
+
+    // qsin(x) = x(c - x^2(b - ax^2))
+    // remez minimax polynomial on [-1/8, 1/8]
+    // a:q16 = 0x4f880b, b = 0x295358621e, c = 0x6487cc5bd
+    // max err = 1, occurs 184/8192 angles
+    poly_q32 = 0x295358621e - ((0x4f880b * norm_sq_q32) >> 16);
+    poly_q32 = 0x6487cc5bd - ((poly_q32 * norm_sq_q32) >> 32);
+    poly_q32 *= norm;
+    q16 sin = (q16)((poly_q32 >> 32) + ((poly_q32 & 0x80000000) >> 31));
 
     if (s & 0x4000) {
-        uq16 temp = cos;
+        q16 temp = cos;
         cos = sin;
         sin = temp;
     }
 
     if (n & 0x8000 && sin != 0)
-        sin = NABS_Q16((q16)sin);
+        sin = NABS_Q16(sin);
     if (s & 0x8000 && cos != 0)
-        cos = NABS_Q16((q16)cos);
+        cos = NABS_Q16(cos);
 
-    return SC_Q16{ (q16)sin, (q16)cos };
+    return SC_Q16{ sin, cos };
+}
+
+static uint32_t __SQRT_NEWTON_32_R16(uint32_t n, uint32_t guess) {
+    uint32_t x = guess;
+    uint32_t y;
+
+    for (int i = 0; i < 2; i++) { // should be unrolled
+        y = n / x;
+        x = (x + y) >> 1;
+    }
+
+    if (((x * x + x) << 1) - n < n) // close enough for input range
+        return x + 1;
+    return x;
+}
+
+// Calculates both the sine and cosine of an angle measured in rotations.
+// Vector spanned by result is guaranteed to be normalized to exactly one.
+// Angle of vector may not be correct.
+SC_Q16 SINCOS_UQ16_NORM(uq16 n) {
+    int32_t _n = (int32_t)n;
+    uq16 norm = (uq16)std::abs((_n & 0x2000) - (_n & 0x1fff));
+    uint16_t s = n ^ (n << 1);
+
+    // qcos(x) = d - x^2(c - x^2(b - ax^2))
+    // remez minimax polynomial on [-1/8, 1/8]
+    // a:q16 = 0x5397b5, b = 0x40ebd73ac5, c = 0x13bd391496, d = 0xffffff8a
+    // max err = 1, occurs 10/8192 angles
+    uint64_t norm_sq_q32 = norm * norm;
+    uint64_t poly_q32 = 0x40ebd73ac5 - ((0x5397b5 * norm_sq_q32) >> 16);
+    poly_q32 = 0x13bd391496 - ((poly_q32 * norm_sq_q32) >> 32);
+    poly_q32 = 0xffffff8a - ((poly_q32 * norm_sq_q32) >> 32);
+    q16 cos = (q16)((poly_q32 >> 16) + ((poly_q32 & 0x8000) >> 15));
+    uint32_t sin_guess;
+    q16 sin;
+
+    if (cos == 65536) {
+        sin = 0;
+        goto fold;
+    }
+
+    sin_guess = 6 * norm;
+    sin = (uq16)__SQRT_NEWTON_32_R16(-(cos * cos), sin_guess);
+
+fold:
+    if (s & 0x4000) {
+        q16 temp = cos;
+        cos = sin;
+        sin = temp;
+    }
+
+    if (n & 0x8000 && sin != 0)
+        sin = NABS_Q16(sin);
+    if (s & 0x8000 && cos != 0)
+        cos = NABS_Q16(cos);
+
+    return SC_Q16{ sin, cos };
 }
 
 uq16 ATAN2_Q16_UNSAFE(q16 y, q16 x) {
-    // Max error of 1 about 3% of the time
-
     uint32_t abs_y = y & 0x7fffffff;
     uint32_t abs_x = x & 0x7fffffff;
 
@@ -475,11 +509,13 @@ poly:
     // qatan(x) = x(c - x^2(b - ax^2))
     // remez minimax polynomial on [-3/7, 3/7]
     // a = 0x693cc22, b = 0xd72318d, c = 0x28bd9daa
+    // max err = 1, occurs about 3% of the time
     uint64_t quotient_sq_q32 = (quotient_q32 * quotient_q32) >> 32;
     uint64_t poly_q32 = 0xd72318d - ((0x693cc22 * quotient_sq_q32) >> 32);
     poly_q32 = 0x28bd9daa - ((poly_q32 * quotient_sq_q32) >> 32);
+    poly_q32 *= quotient_q32;
 
-    res += (__MUL_32_32_R16(poly_q32, quotient_q32) ^ negate) - negate;
+    res += (((poly_q32 >> 48) + ((poly_q32 & 0x800000000000) >> 47)) ^ negate) - negate;
     if (x & 0x80000000)
         res = 0x8000 - res;
     if (y & 0x80000000)
