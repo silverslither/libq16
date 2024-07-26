@@ -120,10 +120,10 @@ __LIBQ16_ALWAYS_INLINE bool CMP_LEQ_UQ16(uq16 a, uq16 b) {
     return a <= b;
 }
 
-bool CMP_GT_Q16(uq16 a, uq16 b);
-bool CMP_LT_Q16(uq16 a, uq16 b);
-bool CMP_GEQ_Q16(uq16 a, uq16 b);
-bool CMP_LEQ_Q16(uq16 a, uq16 b);
+bool CMP_GT_Q16(q16 a, q16 b);
+bool CMP_LT_Q16(q16 a, q16 b);
+bool CMP_GEQ_Q16(q16 a, q16 b);
+bool CMP_LEQ_Q16(q16 a, q16 b);
 
 __LIBQ16_ALWAYS_INLINE uq16 ADD_UQ16_UNSAFE(uq16 a, uq16 b) {
     return (uq16)(a + b);
