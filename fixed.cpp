@@ -358,7 +358,7 @@ SC_Q16 SINCOS_UQ16(uq16 n) {
     if (s & 0x8000 && cos != 0)
         cos = NABS_Q16(cos);
 
-    return SC_Q16{ sin, cos };
+    return { cos, sin };
 }
 
 static uint32_t __SQRT_NEWTON_32_R16(uint32_t n, uint32_t guess) {
@@ -415,7 +415,7 @@ fold:
     if (s & 0x8000 && cos != 0)
         cos = NABS_Q16(cos);
 
-    return SC_Q16{ sin, cos };
+    return { cos, sin };
 }
 
 uq16 ATAN2_Q16_UNSAFE(q16 y, q16 x) {
