@@ -8,41 +8,15 @@
 #include <cstdint>
 #include <cstdio>
 
+#ifndef NDEBUG
 // Placeholder logging function
 #define LIBQ16_LOG_ERR(str) fprintf(stderr, str)
-
-#ifndef LIBQ16_NO_OPAQUE_TYPEDEFS
-
-// WARNING: Likely not transparent! Only for LSP type checking. Production builds should define LIBQ16_NO_OPAQUE_TYPEDEFS.
-#define __INT_OPAQUE_TYPEDEF(T, D)                            \
-    struct D {                                                \
-        T t;                                                  \
-        constexpr explicit D(const T &_t) noexcept : t(_t) {} \
-        constexpr D() noexcept : t(0) {}                      \
-        constexpr D(const D &_d) noexcept = default;          \
-        constexpr D &operator=(const D &rhs) noexcept {       \
-            t = rhs.t;                                        \
-            return *this;                                     \
-        }                                                     \
-        constexpr D &operator=(const T &rhs) noexcept {       \
-            t = rhs;                                          \
-            return *this;                                     \
-        }                                                     \
-        constexpr operator const T &() const { return t; }    \
-        constexpr operator T &() { return t; }                \
-    }
-
-__INT_OPAQUE_TYPEDEF(uint32_t, ufixed_16_16);
-__INT_OPAQUE_TYPEDEF(uint32_t, sfixed_15_16);
-#undef __INT_OPAQUE_TYPEDEF
-
 #else
+#define LIBQ16_LOG_ERR(ignore) ((void)0)
+#endif
 
-typedef uint32_t ufixed_16_16;
-typedef uint32_t sfixed_15_16;
-
-#endif // LIBQ16_NO_OPAQUE_TYPEDEFS
-
+enum ufixed_16_16 : uint32_t {};
+enum sfixed_15_16 : uint32_t {};
 typedef ufixed_16_16 uq16;
 typedef sfixed_15_16 q16;
 
@@ -56,8 +30,8 @@ typedef sfixed_15_16 q16;
 #define __LIBQ16_ALWAYS_INLINE static inline __attribute__((always_inline))
 
 struct SC_Q16 {
-    q16 sin;
     q16 cos;
+    q16 sin;
 };
 
 constexpr __LIBQ16_ALWAYS_INLINE uq16 F64_TO_UQ16_UNSAFE(double n) {
@@ -78,15 +52,6 @@ constexpr __LIBQ16_ALWAYS_INLINE double Q16_TO_F64(q16 n) {
     return std::bit_cast<double>(((uint64_t)(n & 0x80000000) << 32) | std::bit_cast<uint64_t>(res));
 }
 
-constexpr __LIBQ16_ALWAYS_INLINE q16 UQ16_TO_Q16_UNSAFE(uq16 n) {
-    return (q16)n;
-}
-constexpr __LIBQ16_ALWAYS_INLINE uq16 Q16_TO_UQ16_UNSAFE(q16 n) {
-    return (uq16)n;
-}
-q16 UQ16_TO_Q16(uq16 n);
-uq16 Q16_TO_UQ16(q16 n);
-
 __LIBQ16_ALWAYS_INLINE q16 ABS_Q16(q16 n) {
     return (q16)(n & 0x7fffffff);
 }
@@ -98,6 +63,27 @@ __LIBQ16_ALWAYS_INLINE q16 NEG_Q16(q16 n) {
 }
 __LIBQ16_ALWAYS_INLINE q16 SGN_Q16(q16 n) {
     return (q16)(n & 0x80000000);
+}
+
+constexpr __LIBQ16_ALWAYS_INLINE q16 UQ16_TO_Q16_UNSAFE(uq16 n) {
+    return (q16)n;
+}
+constexpr __LIBQ16_ALWAYS_INLINE uq16 Q16_TO_UQ16_UNSAFE(q16 n) {
+    return (uq16)n;
+}
+__LIBQ16_ALWAYS_INLINE q16 UQ16_TO_Q16(uq16 n) {
+    if (SGN_Q16((q16)n)) {
+        LIBQ16_LOG_ERR("ufixed_16_16 to sfixed_15_16 conversion overflow\n");
+        return SFIXED_MAX;
+    }
+    return (q16)n;
+}
+__LIBQ16_ALWAYS_INLINE uq16 Q16_TO_UQ16(q16 n) {
+    if (SGN_Q16(n)) {
+        LIBQ16_LOG_ERR("sfixed_15_16 to ufixed_16_16 conversion underflow\n");
+        return UFIXED_MAX;
+    }
+    return (uq16)n;
 }
 
 __LIBQ16_ALWAYS_INLINE bool CMP_EQ_UQ16(uq16 a, uq16 b) {
@@ -120,22 +106,40 @@ __LIBQ16_ALWAYS_INLINE bool CMP_LEQ_UQ16(uq16 a, uq16 b) {
     return a <= b;
 }
 
-bool CMP_GT_Q16(q16 a, q16 b);
-bool CMP_LT_Q16(q16 a, q16 b);
 bool CMP_GEQ_Q16(q16 a, q16 b);
 bool CMP_LEQ_Q16(q16 a, q16 b);
+__LIBQ16_ALWAYS_INLINE bool CMP_GT_Q16(q16 a, q16 b) {
+    return !CMP_LEQ_Q16(a, b);
+};
+__LIBQ16_ALWAYS_INLINE bool CMP_LT_Q16(q16 a, q16 b) {
+    return !CMP_GEQ_Q16(a, b);
+};
 
 __LIBQ16_ALWAYS_INLINE uq16 ADD_UQ16_UNSAFE(uq16 a, uq16 b) {
     return (uq16)(a + b);
 }
-uq16 ADD_UQ16(uq16 a, uq16 b);
+__LIBQ16_ALWAYS_INLINE uq16 ADD_UQ16(uq16 a, uq16 b) {
+    uint32_t res;
+    if (__builtin_add_overflow((uint32_t)a, (uint32_t)b, &res)) {
+        LIBQ16_LOG_ERR("ufixed_16_16 addition overflow\n");
+        return UFIXED_MAX;
+    }
+    return (uq16)res;
+}
 q16 ADD_Q16_UNSAFE(q16 a, q16 b);
 q16 ADD_Q16(q16 a, q16 b);
 
 __LIBQ16_ALWAYS_INLINE uq16 SUB_UQ16_UNSAFE(uq16 a, uq16 b) {
     return (uq16)(a - b);
 }
-uq16 SUB_UQ16(uq16 a, uq16 b);
+__LIBQ16_ALWAYS_INLINE uq16 SUB_UQ16(uq16 a, uq16 b) {
+    uint32_t res;
+    if (__builtin_sub_overflow((uint32_t)a, (uint32_t)b, &res)) {
+        LIBQ16_LOG_ERR("ufixed_16_16 subtraction underflow\n");
+        return UFIXED_MIN;
+    }
+    return (uq16)(a - b);
+}
 q16 SUB_Q16_UNSAFE(q16 a, q16 b);
 q16 SUB_Q16(q16 a, q16 b);
 
@@ -175,12 +179,12 @@ __LIBQ16_ALWAYS_INLINE q16 MOD_Q16(q16 a, q16 b) {
 
 uq16 SQRT_UQ16(uq16 n);
 __LIBQ16_ALWAYS_INLINE q16 SQRT_Q16(q16 n) {
-    return (q16)(SGN_Q16(n) | SQRT_UQ16((uq16)ABS_Q16(n)));
+    return (q16)(SGN_Q16(n) | (uint32_t)SQRT_UQ16((uq16)ABS_Q16(n)));
 }
 
 uq16 RSQRT_UQ16_UNSAFE(uq16 n);
 __LIBQ16_ALWAYS_INLINE q16 RSQRT_Q16_UNSAFE(q16 n) {
-    return (q16)(SGN_Q16(n) | RSQRT_UQ16_UNSAFE((uq16)ABS_Q16(n)));
+    return (q16)(SGN_Q16(n) | (uint32_t)RSQRT_UQ16_UNSAFE((uq16)ABS_Q16(n)));
 }
 
 SC_Q16 SINCOS_UQ16(uq16 n);

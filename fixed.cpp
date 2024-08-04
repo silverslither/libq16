@@ -29,182 +29,124 @@ q16 F64_TO_Q16(double n) {
     return (n >= 0) ? (q16)res : NABS_Q16((q16)res);
 }
 
-q16 UQ16_TO_Q16(uq16 n) {
-    if (n & 0x80000000) {
-        LIBQ16_LOG_ERR("ufixed_16_16 to sfixed_15_16 conversion overflow\n");
-        return SFIXED_MAX;
-    }
-
-    return (q16)n;
-}
-
-uq16 Q16_TO_UQ16(uq16 n) {
-    if (n & 0x80000000) {
-        LIBQ16_LOG_ERR("sfixed_15_16 to ufixed_16_16 conversion underflow\n");
-        return UFIXED_MAX;
-    }
-
-    return (uq16)n;
-}
-
-bool CMP_GT_Q16(q16 a, q16 b) {
-    if (SGN_Q16(a) < SGN_Q16(b))
-        return true;
-    else if (SGN_Q16(a) > SGN_Q16(b))
-        return false;
-    else
-        return SGN_Q16(a) ? ABS_Q16(a) < ABS_Q16(b) : ABS_Q16(a) > ABS_Q16(b);
-}
-
-bool CMP_LT_Q16(q16 a, q16 b) {
-    if (SGN_Q16(a) > SGN_Q16(b))
-        return true;
-    else if (SGN_Q16(a) < SGN_Q16(b))
-        return false;
-    else
-        return SGN_Q16(a) ? ABS_Q16(a) > ABS_Q16(b) : ABS_Q16(a) < ABS_Q16(b);
-}
-
 bool CMP_GEQ_Q16(q16 a, q16 b) {
-    if (SGN_Q16(a) < SGN_Q16(b))
-        return true;
-    else if (SGN_Q16(a) > SGN_Q16(b))
-        return false;
-    else
-        return SGN_Q16(a) ? ABS_Q16(a) <= ABS_Q16(b) : ABS_Q16(a) >= ABS_Q16(b);
+    uint32_t sign_a = SGN_Q16(a);
+    uint32_t sign_b = SGN_Q16(b);
+    if (sign_a == sign_b)
+        return sign_b ? a <= b : a >= b;
+    return sign_b;
 }
 
 bool CMP_LEQ_Q16(q16 a, q16 b) {
-    if (SGN_Q16(a) > SGN_Q16(b))
-        return true;
-    else if (SGN_Q16(a) < SGN_Q16(b))
-        return false;
-    else
-        return SGN_Q16(a) ? ABS_Q16(a) >= ABS_Q16(b) : ABS_Q16(a) <= ABS_Q16(b);
-}
-
-uq16 ADD_UQ16(uq16 a, uq16 b) {
-    uint32_t res;
-
-    if (__builtin_add_overflow((uint32_t)a, (uint32_t)b, &res)) {
-        LIBQ16_LOG_ERR("ufixed_16_16 addition overflow\n");
-        return UFIXED_MAX;
-    }
-
-    return (uq16)res;
+    uint32_t sign_a = SGN_Q16(a);
+    uint32_t sign_b = SGN_Q16(b);
+    if (sign_a == sign_b)
+        return sign_a ? a >= b : a <= b;
+    return sign_a;
 }
 
 q16 ADD_Q16_UNSAFE(q16 a, q16 b) {
-    uint8_t diff = (a ^ b) >> 31;
+    uint32_t sign_a = SGN_Q16(a);
+    uint32_t sign_b = SGN_Q16(b);
+    if (sign_a == sign_b)
+        return (q16)((a + b) | sign_a);
 
-    if (diff) {
-        uint32_t abs_a = ABS_Q16(a);
-        uint32_t abs_b = ABS_Q16(b);
+    uint32_t abs_a = ABS_Q16(a);
+    uint32_t abs_b = ABS_Q16(b);
+    if (abs_a == abs_b)
+        return (q16)0;
 
-        if (abs_a >= abs_b) {
-            uint32_t res = abs_a - abs_b;
-            if (res != 0)
-                res |= SGN_Q16(a);
-            return (q16)res;
-        } else {
-            uint32_t res = abs_b - abs_a;
-            if (res != 0)
-                res |= SGN_Q16(b);
-            return (q16)res;
-        }
+    uint32_t res;
+    if (abs_a > abs_b) {
+        res = abs_a - abs_b;
+        res |= sign_a;
+    } else {
+        res = abs_b - abs_a;
+        res |= sign_b;
     }
 
-    return (q16)((a + b) | SGN_Q16(a));
+    return (q16)res;
 }
 
 q16 ADD_Q16(q16 a, q16 b) {
-    uint8_t diff = (a ^ b) >> 31;
-
-    if (diff) {
-        uint32_t abs_a = ABS_Q16(a);
-        uint32_t abs_b = ABS_Q16(b);
-
-        if (abs_a >= abs_b) {
-            uint32_t res = abs_a - abs_b;
-            if (res != 0)
-                res |= SGN_Q16(a);
-            return (q16)res;
-        } else {
-            uint32_t res = abs_b - abs_a;
-            if (res != 0)
-                res |= SGN_Q16(b);
-            return (q16)res;
+    uint32_t res;
+    uint32_t sign_a = SGN_Q16(a);
+    uint32_t sign_b = SGN_Q16(b);
+    if (sign_a == sign_b) {
+        res = a + b;
+        if (res & 0x80000000) {
+            LIBQ16_LOG_ERR("sfixed_15_16 addition overflow\n");
+            return (q16)(SFIXED_MAX | sign_a);
         }
+        return (q16)(res | sign_a);
     }
 
-    uint32_t res = a + b;
-    if (res & 0x80000000) {
-        LIBQ16_LOG_ERR("sfixed_15_16 addition overflow\n");
-        return (q16)(0x7fffffff | SGN_Q16(a));
+    uint32_t abs_a = ABS_Q16(a);
+    uint32_t abs_b = ABS_Q16(b);
+    if (abs_a == abs_b)
+        return (q16)0;
+
+    if (abs_a > abs_b) {
+        res = abs_a - abs_b;
+        res |= sign_a;
+    } else {
+        res = abs_b - abs_a;
+        res |= sign_b;
     }
 
-    return (q16)(res | SGN_Q16(a));
-}
-
-uq16 SUB_UQ16(uq16 a, uq16 b) {
-    if (b > a) {
-        LIBQ16_LOG_ERR("ufixed_16_16 subtraction underflow\n");
-        return UFIXED_MIN;
-    }
-
-    return (uq16)(a - b);
+    return (q16)res;
 }
 
 q16 SUB_Q16_UNSAFE(q16 a, q16 b) {
-    uint8_t diff = (a ^ b) >> 31;
+    uint32_t sign_a = SGN_Q16(a);
+    uint32_t sign_b = SGN_Q16(b);
+    if (sign_a != sign_b)
+        return (q16)(ABS_Q16((q16)(a + b)) | sign_a);
 
-    if (!diff) {
-        uint32_t abs_a = ABS_Q16(a);
-        uint32_t abs_b = ABS_Q16(b);
+    uint32_t abs_a = ABS_Q16(a);
+    uint32_t abs_b = ABS_Q16(b);
+    if (abs_a == abs_b)
+        return (q16)0;
 
-        if (abs_a >= abs_b) {
-            uint32_t res = abs_a - abs_b;
-            if (res != 0)
-                res |= SGN_Q16(a);
-            return (q16)res;
-        } else {
-            uint32_t res = abs_b - abs_a;
-            if (res != 0)
-                res |= NEG_Q16(SGN_Q16(b));
-            return (q16)res;
-        }
+    uint32_t res;
+    if (abs_a > abs_b) {
+        res = abs_a - abs_b;
+        res |= sign_a;
+    } else {
+        res = abs_b - abs_a;
+        res |= NEG_Q16((q16)sign_a);
     }
 
-    return (q16)(ABS_Q16((q16)(a + b)) | SGN_Q16(a));
+    return (q16)res;
 }
 
 q16 SUB_Q16(q16 a, q16 b) {
-    uint8_t diff = (a ^ b) >> 31;
-
-    if (!diff) {
-        uint32_t abs_a = ABS_Q16(a);
-        uint32_t abs_b = ABS_Q16(b);
-
-        if (abs_a >= abs_b) {
-            uint32_t res = abs_a - abs_b;
-            if (res != 0)
-                res |= SGN_Q16(a);
-            return (q16)res;
-        } else {
-            uint32_t res = abs_b - abs_a;
-            if (res != 0)
-                res |= NEG_Q16(SGN_Q16(b));
-            return (q16)res;
+    uint32_t res;
+    uint32_t sign_a = SGN_Q16(a);
+    uint32_t sign_b = SGN_Q16(b);
+    if (sign_a != sign_b) {
+        res = a + b;
+        if (!(res & 0x80000000)) {
+            LIBQ16_LOG_ERR("sfixed_15_16 subtraction overflow\n");
+            return (q16)(SFIXED_MAX | sign_a);
         }
+        return (q16)(ABS_Q16((q16)res) | sign_a);
     }
 
-    uint32_t res = a + b;
-    if (!(res & 0x80000000)) {
-        LIBQ16_LOG_ERR("sfixed_15_16 subtraction overflow\n");
-        return (q16)(0x7fffffff | SGN_Q16(a));
+    uint32_t abs_a = ABS_Q16(a);
+    uint32_t abs_b = ABS_Q16(b);
+    if (abs_a == abs_b)
+        return (q16)0;
+
+    if (abs_a > abs_b) {
+        res = abs_a - abs_b;
+        res |= sign_a;
+    } else {
+        res = abs_b - abs_a;
+        res |= NEG_Q16((q16)sign_a);
     }
 
-    return (q16)(ABS_Q16((q16)res) | SGN_Q16(a));
+    return (q16)res;
 }
 
 uq16 MUL_UQ16(uq16 a, uq16 b) {
@@ -220,19 +162,19 @@ uq16 MUL_UQ16(uq16 a, uq16 b) {
 }
 
 q16 MUL_Q16_UNSAFE(q16 a, q16 b) {
-    uint32_t sign = (a ^ b) & 0x80000000;
+    uint32_t sign = SGN_Q16((q16)(a ^ b));
     uint64_t res = (uint64_t)ABS_Q16(a) * (uint64_t)ABS_Q16(b);
     res = (res >> 16) + ((res & 0x8000) >> 15);
     return (q16)(res | sign);
 }
 
 q16 MUL_Q16(q16 a, q16 b) {
-    uint32_t sign = (a ^ b) & 0x80000000;
+    uint32_t sign = SGN_Q16((q16)(a ^ b));
     uint64_t res = (uint64_t)ABS_Q16(a) * (uint64_t)ABS_Q16(b);
 
     if (res >> 47) {
         LIBQ16_LOG_ERR("sfixed_15_16 multiplication overflow\n");
-        return (q16)(0x7fffffff | sign);
+        return (q16)(SFIXED_MAX | sign);
     }
 
     res = (res >> 16) + ((res & 0x8000) >> 15);
@@ -260,7 +202,7 @@ uq16 DIV_UQ16(uq16 a, uq16 b) {
 }
 
 q16 DIV_Q16_UNSAFE(q16 a, q16 b) {
-    uint32_t sign = (a ^ b) & 0x80000000;
+    uint32_t sign = SGN_Q16((q16)(a ^ b));
     uint64_t abs_a = ABS_Q16(a);
     uint32_t abs_b = ABS_Q16(b);
     uint32_t res = ((abs_a << 16) + (abs_b >> 1)) / abs_b;
@@ -272,17 +214,17 @@ q16 DIV_Q16(q16 a, q16 b) {
         LIBQ16_LOG_ERR("sfixed_15_16 division by zero\n");
         if (ABS_Q16(a) == 0)
             return SFIXED_NAN;
-        return (q16)(0x7fffffff | SGN_Q16(a));
+        return (q16)(SFIXED_MAX | SGN_Q16(a));
     }
 
-    uint32_t sign = (a ^ b) & 0x80000000;
+    uint32_t sign = SGN_Q16((q16)(a ^ b));
     uint64_t abs_a = ABS_Q16(a);
     uint32_t abs_b = ABS_Q16(b);
     uint64_t res = ((abs_a << 16) + (abs_b >> 1)) / abs_b;
 
     if (res >> 31) {
         LIBQ16_LOG_ERR("sfixed_15_16 division overflow\n");
-        return (q16)(0x7fffffff | sign);
+        return (q16)(SFIXED_MAX | sign);
     }
 
     return (q16)(res | sign);
@@ -454,12 +396,12 @@ SC_Q16 SINCOS_UQ16_NORM(uq16 n) {
     q16 sin;
 
     if (cos == 65536) {
-        sin = 0;
+        sin = (q16)0;
         goto fold;
     }
 
     sin_guess = 6 * norm;
-    sin = (uq16)__SQRT_NEWTON_32_R16(-(cos * cos), sin_guess);
+    sin = (q16)__SQRT_NEWTON_32_R16(-(cos * cos), sin_guess);
 
 fold:
     if (s & 0x4000) {
@@ -477,8 +419,8 @@ fold:
 }
 
 uq16 ATAN2_Q16_UNSAFE(q16 y, q16 x) {
-    uint32_t abs_y = y & 0x7fffffff;
-    uint32_t abs_x = x & 0x7fffffff;
+    uint32_t abs_y = ABS_Q16(y);
+    uint32_t abs_x = ABS_Q16(x);
 
     uint32_t res = 0;
     uint32_t negate = 0;
@@ -516,9 +458,9 @@ poly:
     poly_q32 *= quotient_q32;
 
     res += (((poly_q32 >> 48) + ((poly_q32 & 0x800000000000) >> 47)) ^ negate) - negate;
-    if (x & 0x80000000)
+    if (SGN_Q16(x))
         res = 0x8000 - res;
-    if (y & 0x80000000)
+    if (SGN_Q16(y))
         res = 0x10000 - res;
 
     return (uq16)res;
