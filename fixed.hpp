@@ -115,6 +115,23 @@ __LIBQ16_ALWAYS_INLINE bool CMP_LT_Q16(q16 a, q16 b) {
     return !CMP_GEQ_Q16(a, b);
 };
 
+__LIBQ16_ALWAYS_INLINE uq16 MIN_UQ16(uq16 a, uq16 b) {
+    return (uq16)std::min((uint32_t)a, (uint32_t)b);
+}
+__LIBQ16_ALWAYS_INLINE uq16 MAX_UQ16(uq16 a, uq16 b) {
+    return (uq16)std::max((uint32_t)a, (uint32_t)b);
+}
+__LIBQ16_ALWAYS_INLINE q16 MIN_Q16(q16 a, q16 b) {
+    if ((a & b) >> 31)
+        return (q16)std::max((uint32_t)a, (uint32_t)b);
+    return (q16)std::min((int32_t)a, (int32_t)b);
+}
+__LIBQ16_ALWAYS_INLINE q16 MAX_Q16(q16 a, q16 b) {
+    if ((a & b) >> 31)
+        return (q16)std::min((uint32_t)a, (uint32_t)b);
+    return (q16)std::max((int32_t)a, (int32_t)b);
+}
+
 __LIBQ16_ALWAYS_INLINE uq16 ADD_UQ16_UNSAFE(uq16 a, uq16 b) {
     return (uq16)(a + b);
 }
