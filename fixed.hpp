@@ -64,6 +64,9 @@ __LIBQ16_ALWAYS_INLINE q16 NEG_Q16(q16 n) {
 __LIBQ16_ALWAYS_INLINE q16 SGN_Q16(q16 n) {
     return (q16)(n & 0x80000000);
 }
+__LIBQ16_ALWAYS_INLINE q16 CPYSGN(q16 mag, q16 sgn) {
+    return (q16)((mag & 0x7fffffff) | (sgn & 0x80000000));
+}
 
 constexpr __LIBQ16_ALWAYS_INLINE q16 UQ16_TO_Q16_UNSAFE(uq16 n) {
     return (q16)n;
