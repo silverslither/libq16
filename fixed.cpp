@@ -286,13 +286,11 @@ uq16 SQRT_UQ16(uq16 n) {
 }
 
 uq16 RSQRT_UQ16_UNSAFE(uq16 n) {
-    // Mostly exact, except edge cases where result is right in between two integers
-
     uint32_t res;
     uint64_t quasi_one_q48;
     uint32_t quasi_one_half;
 
-    if (n <= 0x71c0) { // minimum value that works
+    if (n <= 0x6ee8) { // max value that doesn't work
         res = SQRT_UQ16((uq16)(0xffffffff / n));
     } else {
         uint32_t lz = __builtin_clzg((uint32_t)n);
@@ -312,12 +310,13 @@ uq16 RSQRT_UQ16_UNSAFE(uq16 n) {
 
     // correct off-by-one errors
     quasi_one_q48 = (uint64_t)res * (uint64_t)res * (uint64_t)n;
-    int64_t quasi_diff_q48 = (int64_t)quasi_one_q48 - 0x1000000000000;
+    quasi_one_q48 >>= 48;
 
-    int64_t res_alt = (int64_t)res - ((quasi_diff_q48 >> 63) | 1);
-    int64_t quasi_one_q48_alt = res_alt * res_alt * (int64_t)n;
+    uint64_t res_alt = res - ((quasi_one_q48 - 1) | 1);
+    uint64_t res_sum = res + res_alt;
+    uint64_t quasi_four_q48 = res_sum * res_sum * (uint64_t)n;
 
-    return (std::abs(quasi_diff_q48) < std::abs(quasi_one_q48_alt - 0x1000000000000)) ? (uq16)res : (uq16)res_alt;
+    return (quasi_four_q48 >> 50 != quasi_one_q48) ? (uq16)res : (uq16)res_alt;
 }
 
 // Calculates both the sine and cosine of an angle measured in rotations.
