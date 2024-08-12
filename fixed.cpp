@@ -330,7 +330,6 @@ uq16 SQRT_UQ16(uq16 n) {
 
 uq16 RSQRT_UQ16_UNSAFE(uq16 n) {
     double res = 16777216.0 / std::sqrt((double)n);
-    res = std::bit_cast<double>(std::bit_cast<uint64_t>(res));
     return (uq16)(res + 0.5);
 }
 
