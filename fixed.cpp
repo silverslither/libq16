@@ -235,6 +235,8 @@ q16 DIV_Q16(q16 a, q16 b) {
     _Generic((x), unsigned int: __builtin_clz(x), unsigned long: __builtin_clzl(x), unsigned long long: __builtin_clzll(x))
 #endif
 
+#ifndef LIBQ16_USE_FPU
+
 uq16 SQRT_UQ16(uq16 n) {
     // Uses a modified libfixmath (MIT-licensed) implementation that avoids 64-bit operations.
     // Copyright (c) 2011-2021 libfixmath AUTHORS
@@ -319,6 +321,21 @@ uq16 RSQRT_UQ16_UNSAFE(uq16 n) {
     return (quasi_four_q48 >> 50 != quasi_one_q48) ? (uq16)res : (uq16)res_alt;
 }
 
+#else
+
+uq16 SQRT_UQ16(uq16 n) {
+    double res = std::sqrt((double)((uint64_t)n << 16));
+    return (uq16)(res + 0.5);
+}
+
+uq16 RSQRT_UQ16_UNSAFE(uq16 n) {
+    double res = 16777216.0 / std::sqrt((double)n);
+    res = std::bit_cast<double>(std::bit_cast<uint64_t>(res));
+    return (uq16)(res + 0.5);
+}
+
+#endif // LIBQ16_USE_FPU
+
 // Calculates both the sine and cosine of an angle measured in rotations.
 // Angle of vector spanned by result is guaranteed to be correct.
 // Length of vector may not be exactly one.
@@ -360,6 +377,8 @@ SC_Q16 SINCOS_UQ16(uq16 n) {
     return { cos, sin };
 }
 
+#ifndef LIBQ16_USE_FPU
+
 static uint32_t __SQRT_NEWTON_32_R16(uint32_t n, uint32_t guess) {
     uint32_t x = guess;
     uint32_t y;
@@ -369,10 +388,19 @@ static uint32_t __SQRT_NEWTON_32_R16(uint32_t n, uint32_t guess) {
         x = (x + y) >> 1;
     }
 
-    if (((x * x + x) << 1) - n < n) // close enough for input range
+    if (((x * x + x) << 1) - n < n)
         return x + 1;
     return x;
 }
+
+#else
+
+static uint32_t __SQRT_32_R16(uint32_t n) {
+    float res = std::sqrt((double)n);
+    return (uq16)(res + 0.5);
+}
+
+#endif // LIBQ16_USE_FPU
 
 // Calculates both the sine and cosine of an angle measured in rotations.
 // Vector spanned by result is guaranteed to be normalized to exactly one.
@@ -391,16 +419,22 @@ SC_Q16 SINCOS_UQ16_NORM(uq16 n) {
     poly_q32 = 0x13bd391496 - ((poly_q32 * norm_sq_q32) >> 32);
     poly_q32 = 0xffffff8a - ((poly_q32 * norm_sq_q32) >> 32);
     q16 cos = (q16)((poly_q32 >> 16) + ((poly_q32 & 0x8000) >> 15));
-    uint32_t sin_guess;
     q16 sin;
+#ifndef LIBQ16_USE_FPU
+    uint32_t sin_guess;
+#endif
 
     if (cos == 65536) {
         sin = (q16)0;
         goto fold;
     }
 
+#ifndef LIBQ16_USE_FPU
     sin_guess = 6 * norm;
     sin = (q16)__SQRT_NEWTON_32_R16(-(cos * cos), sin_guess);
+#else
+    sin = (q16)__SQRT_32_R16(-(cos * cos));
+#endif
 
 fold:
     if (s & 0x4000) {
