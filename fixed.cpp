@@ -292,14 +292,21 @@ uq16 RSQRT_UQ16_UNSAFE(uq16 n) {
     uint64_t quasi_one_q48;
     uint32_t quasi_one_half;
 
-    if (n <= 0x6ee8) { // max value that doesn't work
+    if (n <= 0x5f19) { // max value that doesn't work
         res = SQRT_UQ16((uq16)(0xffffffff / n));
     } else {
         uint32_t lz = __builtin_clzg((uint32_t)n);
-        res = 0x100 << (lz >> 1);
-        res = res | (0x40 << ((lz + 1) >> 1)); // dirty but accurate guess
+        uint32_t right = 0x40 << (lz >> 1);
+        uint32_t left = right << 1;
+        uint32_t shift = (lz ^ 0x1f) & 0x1e;
+        uint32_t t_q16 = n - (1 << shift);
+        t_q16 <<= 10;
+        t_q16 >>= shift;
 
-        for (int i = 0; i < 3; i++) { // 32-bit Newton-Raphson iterations, should be unrolled by compiler
+        // cursed discontinuous lerp with optimized constant
+        res = (left * (0xea4 - t_q16) + right * t_q16) >> 10;
+
+        for (int i = 0; i < 2; i++) { // 32-bit Newton-Raphson iterations, should be unrolled by compiler
             quasi_one_q48 = (uint64_t)res * (uint64_t)res * (uint64_t)n;
             quasi_one_half = quasi_one_q48 >> 34; // Q.15
             res = (res * (0xc000 - quasi_one_half)) >> 15;
