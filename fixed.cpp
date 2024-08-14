@@ -238,53 +238,23 @@ q16 DIV_Q16(q16 a, q16 b) {
 #ifndef LIBQ16_USE_FPU
 
 uq16 SQRT_UQ16(uq16 n) {
-    // Uses a modified libfixmath (MIT-licensed) implementation that avoids 64-bit operations.
-    // Copyright (c) 2011-2021 libfixmath AUTHORS
+    // Uses an algorithm by Christophe Meessen (1993)
 
-    if (n == 0)
-        return (uq16)0;
+    uint32_t r = n >> 1;
+    uint32_t q = (n & 1) << 15;
+    uint32_t b = 0x20000000;
 
-    uint32_t x = n;
-    uint32_t c = 0;
-    uint32_t d = 1 << ((__builtin_clzg(x) ^ 0x1f) & 0x1e);
-
-    while (d) {
-        if (x >= c + d) {
-            x -= c + d;
-            c = (c >> 1) + d;
-        } else {
-            c = (c >> 1);
+    while (b >= 0x20) { // should be unrolled by compiler
+        uint32_t t = q + b;
+        if (r >= t) {
+            r -= t;
+            q = t + b;
         }
-
-        d >>= 2;
+        r <<= 1;
+        b >>= 1;
     }
 
-    if (x >> 16) {
-        x -= c;
-        x = (x << 16) - 0x8000;
-        c = (c << 16) + 0x8000;
-    } else {
-        x <<= 16;
-        c <<= 16;
-    }
-
-    d = 1 << 14;
-
-    while (d) {
-        if (x >= c + d) {
-            x -= c + d;
-            c = (c >> 1) + d;
-        } else {
-            c = (c >> 1);
-        }
-
-        d >>= 2;
-    }
-
-    if (x > c)
-        c++;
-
-    return (uq16)c;
+    return (uq16)((q + 0x40) >> 7);
 }
 
 uq16 RSQRT_UQ16_UNSAFE(uq16 n) {
@@ -389,7 +359,7 @@ static uint32_t __SQRT_NEWTON_32_R16(uint32_t n, uint32_t guess) {
     uint32_t x = guess;
     uint32_t y;
 
-    for (int i = 0; i < 2; i++) { // should be unrolled
+    for (int i = 0; i < 2; i++) { // should be unrolled by compiler
         y = n / x;
         x = (x + y) >> 1;
     }
