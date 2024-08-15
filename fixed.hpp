@@ -34,24 +34,6 @@ struct SC_Q16 {
     q16 sin;
 };
 
-constexpr __LIBQ16_ALWAYS_INLINE uq16 F64_TO_UQ16_UNSAFE(double n) {
-    return (uq16)(65536.0 * n + 0.5);
-}
-constexpr __LIBQ16_ALWAYS_INLINE q16 F64_TO_Q16_UNSAFE(double n) {
-    double res = std::bit_cast<double>(std::bit_cast<uint64_t>(65536.0 * n) & 0x7fffffffffffffff) + 0.5;
-    return (q16)(((uint32_t)((std::bit_cast<uint64_t>(n) & 0x8000000000000000) >> 32)) | (uint32_t)res);
-}
-uq16 F64_TO_UQ16(double n);
-q16 F64_TO_Q16(double n);
-
-constexpr __LIBQ16_ALWAYS_INLINE double UQ16_TO_F64(uq16 n) {
-    return (double)n / 65536.0;
-}
-constexpr __LIBQ16_ALWAYS_INLINE double Q16_TO_F64(q16 n) {
-    double res = (double)(n & 0x7fffffff) / 65536.0;
-    return std::bit_cast<double>(((uint64_t)(n & 0x80000000) << 32) | std::bit_cast<uint64_t>(res));
-}
-
 __LIBQ16_ALWAYS_INLINE q16 ABS_Q16(q16 n) {
     return (q16)(n & 0x7fffffff);
 }
@@ -66,6 +48,24 @@ __LIBQ16_ALWAYS_INLINE q16 SGN_Q16(q16 n) {
 }
 __LIBQ16_ALWAYS_INLINE q16 CPYSGN(q16 mag, q16 sgn) {
     return (q16)((mag & 0x7fffffff) | (sgn & 0x80000000));
+}
+
+constexpr __LIBQ16_ALWAYS_INLINE uq16 F64_TO_UQ16_UNSAFE(double n) {
+    return (uq16)(65536.0 * n + 0.5);
+}
+constexpr __LIBQ16_ALWAYS_INLINE q16 F64_TO_Q16_UNSAFE(double n) {
+    uint32_t res = (uint32_t)(__builtin_fabs(65536.0 * n) + 0.5);
+    return (q16)((std::bit_cast<uint64_t>(n) >> 63 << 31) | res);
+}
+uq16 F64_TO_UQ16(double n);
+q16 F64_TO_Q16(double n);
+
+constexpr __LIBQ16_ALWAYS_INLINE double UQ16_TO_F64(uq16 n) {
+    return (double)n / 65536.0;
+}
+constexpr __LIBQ16_ALWAYS_INLINE double Q16_TO_F64(q16 n) {
+    double res = (double)ABS_Q16(n) / 65536.0;
+    return std::bit_cast<double>(((uint64_t)n >> 31 << 63) | std::bit_cast<uint64_t>(res));
 }
 
 constexpr __LIBQ16_ALWAYS_INLINE q16 UQ16_TO_Q16_UNSAFE(uq16 n) {

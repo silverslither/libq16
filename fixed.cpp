@@ -2,8 +2,9 @@
 
 #include "fixed.hpp"
 
+// Does not account for NAN.
 uq16 F64_TO_UQ16(double n) {
-    double res = std::round(65536.0 * n);
+    double res = 65536.0 * n + 0.5;
 
     if (res < 0) {
         LIBQ16_LOG_ERR("double to ufixed_16_16 conversion underflow\n");
@@ -18,15 +19,17 @@ uq16 F64_TO_UQ16(double n) {
     return (uq16)res;
 }
 
+// Does not account for NAN.
 q16 F64_TO_Q16(double n) {
-    double res = fabs(std::round(65536.0 * n));
+    double res = std::fabs(65536.0 * n) + 0.5;
+    uint32_t sign = std::signbit(n) << 31;
 
     if (res >= 2147483648.0) {
         LIBQ16_LOG_ERR("double to sfixed_15_16 conversion overflow\n");
-        return (n >= 0) ? SFIXED_MAX : SFIXED_MIN;
+        return (q16)(SFIXED_MAX | sign);
     }
 
-    return (n >= 0) ? (q16)res : NABS_Q16((q16)res);
+    return (q16)((uint32_t)res | sign);
 }
 
 bool CMP_GEQ_Q16(q16 a, q16 b) {
